@@ -68,5 +68,499 @@
         <script src="./layers/layers.js" type="text/javascript"></script> 
         <script src="./resources/Autolinker.min.js"></script>
         <script src="./resources/qgis2web.js"></script>
+   <!-- ===================================================== -->
+<!-- AUTO LAYER + ATTRIBUTE SEARCH FOR OPENLAYERS -->
+<!-- COPY PASTE READY -->
+<!-- ===================================================== -->
+
+<style>
+
+.ol-search-panel{
+    position:absolute;
+    top:10px;
+    left:60px;
+    z-index:1000;
+    background:white;
+    padding:10px;
+    width:260px;
+    border-radius:8px;
+    box-shadow:0 2px 8px rgba(0,0,0,0.3);
+    font-family:Arial,sans-serif;
+}
+
+.ol-search-panel select,
+.ol-search-panel input,
+.ol-search-panel button{
+
+    width:100%;
+    margin-top:6px;
+    padding:8px;
+    border:1px solid #ccc;
+    border-radius:4px;
+    box-sizing:border-box;
+    font-size:14px;
+}
+
+.ol-search-panel button{
+    cursor:pointer;
+}
+
+</style>
+
+<!-- SEARCH PANEL -->
+<div class="ol-search-panel">
+
+    <!-- LAYER -->
+    <select id="ol-layer-select">
+        <option value="">
+            Select Layer
+        </option>
+    </select>
+
+    <!-- ATTRIBUTE -->
+    <select id="ol-attribute-select">
+        <option value="">
+            Select Attribute
+        </option>
+    </select>
+
+    <!-- SEARCH -->
+    <input
+        type="text"
+        id="ol-search-input"
+        placeholder="Enter search value..."
+    >
+
+    <!-- BUTTON -->
+    <button id="ol-search-button">
+        Search
+    </button>
+
+</div>
+
+<script>
+
+// =====================================================
+// AUTO SEARCH SYSTEM
+// =====================================================
+
+// -------------------------------------------
+// HTML
+// -------------------------------------------
+
+const layerSelect =
+    document.getElementById(
+        "ol-layer-select"
+    );
+
+const attributeSelect =
+    document.getElementById(
+        "ol-attribute-select"
+    );
+
+const searchInput =
+    document.getElementById(
+        "ol-search-input"
+    );
+
+const searchButton =
+    document.getElementById(
+        "ol-search-button"
+    );
+
+// -------------------------------------------
+// STORAGE
+// -------------------------------------------
+
+const searchableLayers = [];
+
+// =====================================================
+// GET ALL LAYERS AUTOMATICALLY
+// =====================================================
+
+function getAllLayers(layerGroup){
+
+    let layers = [];
+
+    layerGroup.forEach(layer => {
+
+        // Group Layer
+        if(layer instanceof ol.layer.Group){
+
+            layers = layers.concat(
+                getAllLayers(
+                    layer.getLayers()
+                )
+            );
+
+        }
+
+        // Normal Layer
+        else{
+
+            layers.push(layer);
+
+        }
+
+    });
+
+    return layers;
+}
+
+// =====================================================
+// DETECT VECTOR LAYERS
+// =====================================================
+
+const allLayers =
+    getAllLayers(
+        map.getLayers()
+    );
+
+allLayers.forEach((layer,index) => {
+
+    let source = null;
+
+    // ---------------------------------------
+    // VECTOR LAYER
+    // ---------------------------------------
+
+    if(layer instanceof ol.layer.Vector){
+
+        source =
+            layer.getSource();
+
+    }
+
+    // ---------------------------------------
+    // IMAGE VECTOR LAYER
+    // ---------------------------------------
+
+    else if(
+
+        layer instanceof ol.layer.Image &&
+
+        layer.getSource() instanceof ol.source.ImageVector
+
+    ){
+
+        source =
+            layer
+            .getSource()
+            .getSource();
+
+    }
+
+    // ---------------------------------------
+    // SKIP NON VECTOR
+    // ---------------------------------------
+
+    if(!source) return;
+
+    // ---------------------------------------
+    // LAYER NAME
+    // ---------------------------------------
+
+    let layerName =
+
+        layer.get("name") ||
+
+        layer.get("title") ||
+
+        "Layer " + (index + 1);
+
+    // ---------------------------------------
+    // SAVE
+    // ---------------------------------------
+
+    searchableLayers.push({
+
+        layer : layer,
+        source : source,
+        name : layerName
+
+    });
+
+    // ---------------------------------------
+    // DROPDOWN OPTION
+    // ---------------------------------------
+
+    const option =
+        document.createElement("option");
+
+    option.value =
+        searchableLayers.length - 1;
+
+    option.textContent =
+        layerName;
+
+    layerSelect.appendChild(option);
+
+});
+
+// =====================================================
+// POPULATE ATTRIBUTES
+// =====================================================
+
+layerSelect.addEventListener("change", function(){
+
+    // Clear
+    attributeSelect.innerHTML =
+
+        '<option value="">Select Attribute</option>';
+
+    const layerIndex =
+        this.value;
+
+    if(layerIndex === "") return;
+
+    const selectedLayer =
+        searchableLayers[layerIndex];
+
+    const features =
+        selectedLayer
+        .source
+        .getFeatures();
+
+    if(features.length === 0) return;
+
+    // ---------------------------------------
+    // FIRST FEATURE
+    // ---------------------------------------
+
+    const props =
+        features[0].getProperties();
+
+    Object.keys(props).forEach(key => {
+
+        // Ignore geometry
+        if(key === "geometry") return;
+
+        const option =
+            document.createElement("option");
+
+        option.value =
+            key;
+
+        option.textContent =
+            key;
+
+        attributeSelect.appendChild(option);
+
+    });
+
+});
+
+// =====================================================
+// SELECT INTERACTION
+// =====================================================
+
+const searchSelect =
+    new ol.interaction.Select({
+
+        condition :
+            ol.events.condition.never
+
+    });
+
+map.addInteraction(searchSelect);
+
+// =====================================================
+// SEARCH FUNCTION
+// =====================================================
+
+function searchFeature(){
+
+    // Clear old
+    searchSelect
+        .getFeatures()
+        .clear();
+
+    // ---------------------------------------
+    // VALUES
+    // ---------------------------------------
+
+    const layerIndex =
+        layerSelect.value;
+
+    const attribute =
+        attributeSelect.value;
+
+    const searchText =
+        searchInput
+        .value
+        .trim()
+        .toLowerCase();
+
+    // ---------------------------------------
+    // VALIDATION
+    // ---------------------------------------
+
+    if(layerIndex === ""){
+
+        alert("Select Layer");
+
+        return;
+    }
+
+    if(attribute === ""){
+
+        alert("Select Attribute");
+
+        return;
+    }
+
+    if(searchText === ""){
+
+        alert("Enter Search Value");
+
+        return;
+    }
+
+    // ---------------------------------------
+    // SELECTED LAYER
+    // ---------------------------------------
+
+    const selectedLayer =
+        searchableLayers[layerIndex];
+
+    const features =
+        selectedLayer
+        .source
+        .getFeatures();
+
+    // ---------------------------------------
+    // MATCH FEATURE
+    // ---------------------------------------
+
+    const matchedFeature =
+        features.find(feature => {
+
+            const value =
+                feature.get(attribute);
+
+            if(
+                value === null ||
+                value === undefined
+            ){
+                return false;
+            }
+
+            return value
+                .toString()
+                .toLowerCase()
+                .includes(searchText);
+
+        });
+
+    // ---------------------------------------
+    // NOT FOUND
+    // ---------------------------------------
+
+    if(!matchedFeature){
+
+        alert("No Matching Feature Found");
+
+        return;
+    }
+
+    // ---------------------------------------
+    // HIGHLIGHT
+    // ---------------------------------------
+
+    searchSelect
+        .getFeatures()
+        .push(matchedFeature);
+
+    // ---------------------------------------
+    // GEOMETRY
+    // ---------------------------------------
+
+    const geometry =
+        matchedFeature.getGeometry();
+
+    if(!geometry) return;
+
+    const type =
+        geometry.getType();
+
+    // ---------------------------------------
+    // POINT
+    // ---------------------------------------
+
+    if(type === "Point"){
+
+        map.getView().animate({
+
+            center :
+                geometry.getCoordinates(),
+
+            zoom : 19,
+
+            duration : 1000
+
+        });
+
+    }
+
+    // ---------------------------------------
+    // OTHERS
+    // ---------------------------------------
+
+    else{
+
+        map.getView().fit(
+
+            geometry.getExtent(),
+
+            {
+
+                padding : [50,50,50,50],
+
+                duration : 1000
+
+            }
+
+        );
+
+    }
+
+}
+
+// =====================================================
+// BUTTON
+// =====================================================
+
+searchButton.addEventListener(
+
+    "click",
+
+    searchFeature
+
+);
+
+// =====================================================
+// ENTER KEY
+// =====================================================
+
+searchInput.addEventListener(
+
+    "keydown",
+
+    function(e){
+
+        if(e.key === "Enter"){
+
+            e.preventDefault();
+
+            searchFeature();
+
+        }
+
+    }
+
+);
+
+</script>
+    
     </body>
 </html>
